@@ -1,0 +1,7 @@
+﻿  csv.cpp
+  string_view is only available with C++17 or later.
+C:\Users\geeky\MEGA\Workspace\Visual Studio 2019\CSV_Sorter\CSV_Sorter\csv.cpp(8,7): error C2039: 'string_view': is not a member of 'std'
+C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.23.28105\include\string(20): message : see declaration of 'std'
+C:\Users\geeky\MEGA\Workspace\Visual Studio 2019\CSV_Sorter\CSV_Sorter\csv.cpp(8,19): error C2065: 'string_view': undeclared identifier
+C:\Users\geeky\MEGA\Workspace\Visual Studio 2019\CSV_Sorter\CSV_Sorter\csv.cpp(8,19): error C2146: syntax error: missing ';' before identifier 'csv_view'
+C:\Users\geeky\MEGA\Workspace\Visual Studio 2019\CSV_Sorter\CSV_Sorter\csv.cpp(8,19): error C3861: 'csv_view': identifier not found
