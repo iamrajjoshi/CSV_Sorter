@@ -127,7 +127,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="csv.cpp" />
+    <ClCompile Include="csv_sort.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="test_large.csv" />
+    <None Include="test_small.csv" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
