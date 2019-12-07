@@ -5,61 +5,96 @@
 #include <vector>
 #include <algorithm>
 #include <fstream>
+#include <memory>
+
 using namespace std;
 
-enum class Type { int_type = 0, double_type = 1, string_type = 2 };
-
 class CSV_Line {
-public:
+private:
 	string_view line;
 	variant<int, double, string> sortfield;
-	CSV_Line(int col, string_view& line, Type fieldType) : line(line) {
-		size_t start = 0, end = string_view::npos;
-		string temp;
-		for (int i = 0; i < col; ++i, ++start)
-			start = line.find(",", start);
-		end = line.find(",", start + 1);
-		if (end == string_view::npos)
-			temp = static_cast<string>(line.substr(start));
-		else
-			temp = static_cast<string>(line.substr(start, end-start));
 
-		if (fieldType == Type::int_type)
-			sortfield = stoi(temp);
-		else if (fieldType == Type::double_type)
-			sortfield = stod(temp);
-		else
-			sortfield = temp;
-
-	}
+public:
+	friend class CSV_File;
+	enum class dataType { int_type = 0, double_type = 1, string_type = 2 };
+	CSV_Line(int, string_view&, dataType);
 };
 
-string_view& getcsvLine(string_view& csvbuf, string_view& line) {
-	auto lineend = csvbuf.find("\n");
-	line = csvbuf.substr(0, lineend);
-	csvbuf.remove_prefix(lineend + 1);
+CSV_Line::CSV_Line(int col, string_view& line, dataType fieldType) : line(line) {
+	size_t start = 0, end = string_view::npos;
+	string temp;
+	for (int i = 0; i < col; ++i, ++start)
+		start = line.find(",", start);
+	end = line.find(",", start + 1);
+	if (end == string_view::npos)
+		temp = static_cast<string>(line.substr(start));
+	else
+		temp = static_cast<string>(line.substr(start, end - start));
+
+	if (fieldType == dataType::int_type)
+		sortfield = stoi(temp);
+	else if (fieldType == dataType::double_type)
+		sortfield = stod(temp);
+	else
+		sortfield = temp;
+}
+
+class CSV_File {
+private:
+	fstream file;
+	string fname;
+	unique_ptr<char[]> buffer;
+	string_view svbuf;
+	string header;
+	string sortField;
+	vector<CSV_Line> lines;
+	char order;
+	
+	string_view& getcsvLine(string_view&);
+	int colToSort();
+	CSV_Line::dataType typeDetector(int, string_view& line);
+
+public:
+	CSV_File(string, string, char);
+	void readFile();
+	void sortFile();
+	void writeFile();
+	
+};
+
+CSV_File::CSV_File(string fname, string sortField, char order) : fname(fname), sortField(sortField), order(order) {};
+
+string_view& CSV_File::getcsvLine(string_view& line) {
+	auto lineend = svbuf.find("\n");
+	line = svbuf.substr(0, lineend);
+	svbuf.remove_prefix(lineend + 1);
 	return line;
 }
 
-int colToSort(string& headerToSort, string_view& headers) {
+int CSV_File::colToSort() {// write the execption 
 	int col = 0;
 	size_t start = 0;
-
+	bool exists = false;
 	while (true) {
-		auto end = headers.find(",", start);
+		auto end = header.find(",", start);
 		if (end == string_view::npos)
 			break;
-		if (headerToSort == headers.substr(start, end-start))
+		if (sortField == header.substr(start, end - start)) {
 			break;
+			exists = true;
+		}
+			
 		else {
 			col++;
 			start = end + 1;
 		}
 	}
+	//if(exists == false)
+		
 	return col;
 }
 
-Type typeDetector(int col, string_view& line) {
+CSV_Line::dataType CSV_File::typeDetector(int col, string_view& line) {
 	size_t start = 0;
 	for (int i = 0; i < col; ++i, ++start)
 		start = line.find(",", start);
@@ -69,45 +104,57 @@ Type typeDetector(int col, string_view& line) {
 	if (end == string_view::npos)
 		temp = line.substr(start);
 	else
-		temp =line.substr(start, end -start);
+		temp = line.substr(start, end - start);
 
 	if (temp.find_first_not_of("-0123456789") == string::npos)
-		return Type::int_type;
+		return CSV_Line::dataType::int_type;
 	else if (temp.find_first_not_of("-0123456789.") == string::npos)
-		return Type::double_type;
+		return CSV_Line::dataType::double_type;
 	else
-		return Type::string_type;
+		return CSV_Line::dataType::string_type;
 }
 
-string readFile(string& fname) {
-	fstream file;
+void CSV_File::readFile() {
 	file.open(fname, ios::in);
-	string str((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
-	str = str.c_str();
+	if (!file.is_open()) {
+		cout << "Error opening file";
+		exit(1);
+	}
+	
+	file.seekg(0, file.end);
+	const auto length = static_cast<uint64_t>(file.tellg()) + 1;
+	file.seekg(0, file.beg);
+	buffer = make_unique<char[]>(length);
+	memset(buffer.get(), 0, length);
+	file.read(buffer.get(), length);
+	svbuf = buffer.get();
 	file.close();
-	return str;
+	return;
 }
 
-string_view& createLines(vector<CSV_Line>& lines, string& buffer, string& sortField) {
-	string_view csv_view(buffer);
-	string_view line = getcsvLine(csv_view, line);
-	string_view csv_header = (line);
-	int col = colToSort(sortField, csv_header);
+void CSV_File::sortFile() {
+	string_view line = getcsvLine(line);
+	header = static_cast<string>(line);
+	int col = colToSort();
 
-	line = getcsvLine(csv_view, line);
-	Type t = typeDetector(col, line);
+	line = getcsvLine(line);
+	CSV_Line::dataType t = typeDetector(col, line);
 	lines.emplace_back(CSV_Line(col, line, t));
 
-	while (!csv_view.empty()) {
-		line = getcsvLine(csv_view, line);
+	while (!svbuf.empty()) {
+		line = getcsvLine(line);
 		lines.emplace_back(CSV_Line(col, line, t));
 	}
 
-	return csv_header;
+	if(order == 'a')
+		sort(lines.begin(), lines.end(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
+	if (order == 'd')
+		sort(lines.rbegin(), lines.rend(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
+	return;
 }
 
-void writeFile(string& fname,string_view header, vector<CSV_Line>& lines) {
-	fstream file;
+void CSV_File::writeFile() {
+	
 	file.open(fname, ios::out);
 	file << header << endl;
 	for (auto i = lines.begin(); i != lines.end(); ++i)
@@ -120,14 +167,10 @@ int main() {
 	char buffer_c[] = "name,age,num\nJoe,42,45.5\nFred,50,50.5\nAlbert,21,44.5\n";
 	string fname = "C:/Users/geeky/MEGA/Workspace/Visual Studio 2019/CSV_Sorter/CSV_Sorter/test_small.csv";
 	string sortField = "seq";
-	vector<CSV_Line> lines;
-	
-	string buffer = readFile(fname);
-	string_view header = createLines(lines, buffer, sortField);
-	
-	sort(lines.begin(), lines.end(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
-	
-	writeFile(fname, header, lines);
+	CSV_File File(fname, sortField, 'd');
+	File.readFile();
+	File.sortFile();
+	File.writeFile();
 
 	return 0;
 }
