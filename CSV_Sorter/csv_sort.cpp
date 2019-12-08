@@ -9,7 +9,7 @@
 
 using namespace std;
 
-class does_not_exist : public std::exception {
+class does_not_exist : public exception {
 public:
 	const char* what() const throw () {
 		return "The column does not exist!";
