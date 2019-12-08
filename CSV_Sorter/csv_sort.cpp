@@ -9,6 +9,13 @@
 
 using namespace std;
 
+class does_not_exist : public std::exception {
+public:
+	const char* what() const throw () {
+		return "The column does not exist!";
+	}
+};
+
 class CSV_Line {
 private:
 	string_view line;
@@ -71,26 +78,33 @@ string_view& CSV_File::getcsvLine(string_view& line) {
 	return line;
 }
 
-int CSV_File::colToSort() {// write the execption 
+int CSV_File::colToSort() {
 	int col = 0;
 	size_t start = 0;
 	bool exists = false;
-	while (true) {
-		auto end = header.find(",", start);
-		if (end == string_view::npos)
-			break;
-		if (sortField == header.substr(start, end - start)) {
-			break;
-			exists = true;
+	try {
+		while (true) {
+			auto end = header.find(",", start);
+			if (end == string_view::npos)
+				break;
+			if (sortField == header.substr(start, end - start)) {
+				exists = true;
+				break;
+			}
+
+			else {
+				col++;
+				start = end + 1;
+			}
 		}
-			
-		else {
-			col++;
-			start = end + 1;
-		}
+		if (exists == false)
+			throw does_not_exist();
 	}
-	//if(exists == false)
-		
+	catch (does_not_exist & e) {
+		cout << "Exception:" << endl;
+		cout << e.what() << endl;
+		exit(1);
+	}
 	return col;
 }
 
@@ -154,7 +168,6 @@ void CSV_File::sortFile() {
 }
 
 void CSV_File::writeFile() {
-	
 	file.open(fname, ios::out);
 	file << header << endl;
 	for (auto i = lines.begin(); i != lines.end(); ++i)
@@ -167,7 +180,7 @@ int main() {
 	char buffer_c[] = "name,age,num\nJoe,42,45.5\nFred,50,50.5\nAlbert,21,44.5\n";
 	string fname = "C:/Users/geeky/MEGA/Workspace/Visual Studio 2019/CSV_Sorter/CSV_Sorter/test_small.csv";
 	string sortField = "seq";
-	CSV_File File(fname, sortField, 'd');
+	CSV_File File(fname, sortField, 'a');
 	File.readFile();
 	File.sortFile();
 	File.writeFile();
