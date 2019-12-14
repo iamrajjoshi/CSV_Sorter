@@ -6,8 +6,30 @@
 #include <algorithm>
 #include <fstream>
 #include <memory>
+#include <regex>
 
 using namespace std;
+
+class Date {
+private:
+	int day;
+	int month;
+	int year;
+public:
+	Date(string);
+	int getYear() const { return year; }
+	int getMonth() const { return month; }
+	int getDay() const { return day; }
+};
+
+Date::Date(string in) {
+	string temp = in.substr(0, 2);
+	day = stoi(temp);
+	temp = in.substr(3, 2);
+	month = stoi(temp);
+	temp = in.substr(6, 4);
+	year = stoi(temp);
+}
 
 class does_not_exist : public exception {
 public:
@@ -19,13 +41,47 @@ public:
 class CSV_Line {
 private:
 	string_view line;
-	variant<int, double, string> sortfield;
+	variant<int, double, string, Date> sortfield;
 
 public:
 	friend class CSV_File;
-	enum class dataType { int_type = 0, double_type = 1, string_type = 2 };
+	enum class dataType { int_type = 0, double_type = 1, date_type = 2, string_type = 3 };
 	CSV_Line(int, string_view&, dataType);
+	friend bool operator >(const Date& d1, const Date& d2);
+	friend bool operator <(const Date& d1, const Date& d2);
 };
+
+bool operator < (const Date& d1, const Date& d2) {
+	if (d1.getYear() < d2.getYear())
+		return true;
+	else if (d1.getYear() > d2.getYear())
+		return false;
+	if (d1.getMonth() < d2.getMonth())
+		return true;
+	else if (d1.getMonth() > d2.getMonth())
+		return false;
+	if (d1.getDay() < d2.getDay())
+		return true;
+	else if (d1.getDay() > d2.getDay())
+		return false;
+	else return true;
+}
+
+bool operator > (const Date& d1, const Date& d2) {
+	if (d1.getYear() > d2.getYear())
+		return true;
+	else if (d1.getYear() < d2.getYear())
+		return false;
+	if (d1.getMonth() > d2.getMonth())
+		return true;
+	else if (d1.getMonth() < d2.getMonth())
+		return false;
+	if (d1.getDay() > d2.getDay())
+		return true;
+	else if (d1.getDay() < d2.getDay())
+		return false;
+	else return true;
+}
 
 CSV_Line::CSV_Line(int col, string_view& line, dataType fieldType) : line(line) {
 	size_t start = 0, end = string_view::npos;
@@ -42,6 +98,8 @@ CSV_Line::CSV_Line(int col, string_view& line, dataType fieldType) : line(line) 
 		sortfield = stoi(temp);
 	else if (fieldType == dataType::double_type)
 		sortfield = stod(temp);
+	else if (fieldType == dataType::date_type)
+		sortfield = Date(temp);
 	else
 		sortfield = temp;
 }
@@ -55,6 +113,7 @@ private:
 	string header;
 	string sortField;
 	vector<CSV_Line> lines;
+	vector <string> rg = { "^(\\+|-)?\\d+", "^(\\+|-)?\\d+\\.\\d+", "^[0-2][0-9]\\/[0-9][0-9]\\/\\d{4}"};
 	char order;
 	
 	string_view& getcsvLine(string_view&);
@@ -85,13 +144,12 @@ int CSV_File::colToSort() {
 	try {
 		while (true) {
 			auto end = header.find(",", start);
-			if (end == string_view::npos)
-				break;
 			if (sortField == header.substr(start, end - start)) {
 				exists = true;
 				break;
 			}
-
+			else if (end == string_view::npos)
+				break;
 			else {
 				col++;
 				start = end + 1;
@@ -109,6 +167,7 @@ int CSV_File::colToSort() {
 }
 
 CSV_Line::dataType CSV_File::typeDetector(int col, string_view& line) {
+	regex i(rg[0]), doub(rg[1]), dat(rg[2]);
 	size_t start = 0;
 	for (int i = 0; i < col; ++i, ++start)
 		start = line.find(",", start);
@@ -119,11 +178,13 @@ CSV_Line::dataType CSV_File::typeDetector(int col, string_view& line) {
 		temp = line.substr(start);
 	else
 		temp = line.substr(start, end - start);
-
-	if (temp.find_first_not_of("-0123456789") == string::npos)
+		
+	if (regex_match(temp, i))
 		return CSV_Line::dataType::int_type;
-	else if (temp.find_first_not_of("-0123456789.") == string::npos)
+	else if (regex_match(temp, doub))
 		return CSV_Line::dataType::double_type;
+	else if (regex_match(temp, dat))
+		return CSV_Line::dataType::date_type;
 	else
 		return CSV_Line::dataType::string_type;
 }
@@ -176,14 +237,20 @@ void CSV_File::writeFile() {
 	return;
 }
 
-int main() {
-	char buffer_c[] = "name,age,num\nJoe,42,45.5\nFred,50,50.5\nAlbert,21,44.5\n";
-	string fname = "C:/Users/geeky/MEGA/Workspace/Visual Studio 2019/CSV_Sorter/CSV_Sorter/test_small.csv";
-	string sortField = "seq";
-	CSV_File File(fname, sortField, 'a');
-	File.readFile();
-	File.sortFile();
-	File.writeFile();
-
+int main(int argc, char* argv[]) {
+	if (argc == 4) {
+		string fname = argv[1];
+		string sortField = argv[2];
+		string order = argv[3];
+		CSV_File File(fname, sortField, order[1]);
+		File.readFile();
+		File.sortFile();
+		File.writeFile();
+	}
+	else {
+		cout << "Incorrect Use! " << endl;
+		cout << "Usage: " << "filePath sortField -a/d" << endl;
+		return -1;
+	}
 	return 0;
 }
