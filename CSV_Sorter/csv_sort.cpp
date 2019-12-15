@@ -7,8 +7,14 @@
 #include <fstream>
 #include <memory>
 #include <regex>
+#include <chrono>
+#include <execution>
 
 using namespace std;
+using namespace std::chrono;
+
+#define SIZE 80000000
+char buf[SIZE];
 
 class Date {
 private:
@@ -21,6 +27,16 @@ public:
 	int getMonth() const { return month; }
 	int getDay() const { return day; }
 };
+
+template <typename func>
+milliseconds TimeMe(func f) {
+	time_point<std::chrono::system_clock> start, end;
+	start = std::chrono::system_clock::now();
+	f();
+	end = std::chrono::system_clock::now();
+	return duration_cast<milliseconds> (end - start);
+
+}
 
 Date::Date(string in) {
 	string temp = in.substr(0, 2);
@@ -40,7 +56,7 @@ public:
 
 class CSV_Line {
 private:
-	string_view line;
+	string_view csv_line;
 	variant<int, double, string, Date> sortfield;
 
 public:
@@ -83,7 +99,7 @@ bool operator > (const Date& d1, const Date& d2) {
 	else return true;
 }
 
-CSV_Line::CSV_Line(int col, string_view& line, dataType fieldType) : line(line) {
+CSV_Line::CSV_Line(int col, string_view& line, dataType fieldType) : csv_line(line) {
 	size_t start = 0, end = string_view::npos;
 	string temp;
 	for (int i = 0; i < col; ++i, ++start)
@@ -106,8 +122,10 @@ CSV_Line::CSV_Line(int col, string_view& line, dataType fieldType) : line(line) 
 
 class CSV_File {
 private:
-	fstream file;
-	string fname;
+	fstream inFile;
+	fstream outFile;
+	string infname;
+	string outfname;
 	unique_ptr<char[]> buffer;
 	string_view svbuf;
 	string header;
@@ -121,17 +139,21 @@ private:
 	CSV_Line::dataType typeDetector(int, string_view& line);
 
 public:
-	CSV_File(string, string, char);
+	CSV_File(string, string, string, char);
 	void readFile();
+	void processFile();
 	void sortFile();
 	void writeFile();
-	
 };
 
-CSV_File::CSV_File(string fname, string sortField, char order) : fname(fname), sortField(sortField), order(order) {};
+CSV_File::CSV_File(string infname, string outfname, string sortField, char order) : infname(infname), outfname(outfname), sortField(sortField), order(order) {};
 
 string_view& CSV_File::getcsvLine(string_view& line) {
 	auto lineend = svbuf.find("\n");
+	if (lineend == string_view::npos) {
+		svbuf = "";
+		return line;
+	}
 	line = svbuf.substr(0, lineend);
 	svbuf.remove_prefix(lineend + 1);
 	return line;
@@ -190,24 +212,25 @@ CSV_Line::dataType CSV_File::typeDetector(int col, string_view& line) {
 }
 
 void CSV_File::readFile() {
-	file.open(fname, ios::in);
-	if (!file.is_open()) {
+	inFile.open(infname, ios::in);
+	if (!inFile.is_open()) {
 		cout << "Error opening file";
 		exit(1);
 	}
 	
-	file.seekg(0, file.end);
-	const auto length = static_cast<uint64_t>(file.tellg()) + 1;
-	file.seekg(0, file.beg);
+	inFile.seekg(0, inFile.end);
+	const auto length = static_cast<uint64_t>(inFile.tellg()) + 1;
+	inFile.seekg(0, inFile.beg);
 	buffer = make_unique<char[]>(length);
 	memset(buffer.get(), 0, length);
-	file.read(buffer.get(), length);
+	inFile.read(buffer.get(), length);
 	svbuf = buffer.get();
-	file.close();
+	inFile.close();
+
 	return;
 }
 
-void CSV_File::sortFile() {
+void CSV_File::processFile() {
 	string_view line = getcsvLine(line);
 	header = static_cast<string>(line);
 	int col = colToSort();
@@ -221,36 +244,54 @@ void CSV_File::sortFile() {
 		lines.emplace_back(CSV_Line(col, line, t));
 	}
 
+	return;
+}
+
+void CSV_File::sortFile() {
 	if(order == 'a')
-		sort(lines.begin(), lines.end(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
+		sort(std::execution::par_unseq, lines.begin(), lines.end(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
 	if (order == 'd')
-		sort(lines.rbegin(), lines.rend(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
+		sort(execution::par_unseq, lines.rbegin(), lines.rend(), [](const CSV_Line& s1, const CSV_Line& s2) {return s1.sortfield < s2.sortfield; });
 	return;
 }
 
 void CSV_File::writeFile() {
-	file.open(fname, ios::out);
-	file << header << endl;
+	outFile.open(outfname, ios::out);
+	outFile.rdbuf()->pubsetbuf(buf, SIZE);
+	outFile << header << endl;
 	for (auto i = lines.begin(); i != lines.end(); ++i)
-		file << (*i).line << endl;
-	file.close();
+		outFile << (*i).csv_line << '\n';
+	outFile.close();
 	return;
 }
 
 int main(int argc, char* argv[]) {
-	if (argc == 4) {
-		string fname = argv[1];
-		string sortField = argv[2];
-		string order = argv[3];
-		CSV_File File(fname, sortField, order[1]);
-		File.readFile();
-		File.sortFile();
-		File.writeFile();
+	if (argc == 5) {
+		string ifname = argv[1];
+		string ofname = argv[2];
+		string sortField = argv[3];
+		string order = argv[4];
+		CSV_File File(ifname, ofname, sortField, order[1]);
+		milliseconds m;
+		
+		m = TimeMe([&File]() {File.readFile(); });
+		cout << "Read File Execution Time: " << m.count() << " milliseconds" << endl;
+		
+		m = TimeMe([&File]() {File.processFile(); });
+		cout << "Process File Execution Time: " << m.count() << " milliseconds" << endl;
+		
+		m  = TimeMe([&File]() {File.sortFile(); });
+		cout << "Sort File Execution Time: " << m.count() << " milliseconds" << endl;
+		
+		m = TimeMe([&File]() {File.writeFile(); });
+		cout << "Write File Execution Time: " << m.count() << " milliseconds" << endl;
 	}
+	
 	else {
 		cout << "Incorrect Use! " << endl;
-		cout << "Usage: " << "filePath sortField -a/d" << endl;
+		cout << "Usage: " << "infilePath outfilePath sortField -a/d" << endl;
 		return -1;
 	}
+
 	return 0;
 }
